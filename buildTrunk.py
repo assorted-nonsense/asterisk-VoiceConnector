@@ -7,6 +7,7 @@ import ipaddress
 import secrets
 import string
 
+
 regionChosen = ''   # Add region if desired
 vpcChosen = ''      # Add VPC if desired
 subnetChosen = ''   # Add subnet if desired
