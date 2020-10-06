@@ -10,16 +10,28 @@ This script will procure a random telephone number from Illinois as part of the 
 The output contains vital information for configuring your SIP Client.  For example:
 
 Phone Number: +12246005344
+
 VoiceConnectorID: bih7c1yatt5oahoridjaua
+
 Server IP: 54.227.249.70
+
 Password: xxxxxxxxx
 
+
 When configuring SIP Client:
+
 User ID: +12246005344
+
 Domain: 54.227.249.70
+
 Password: xxxxxxxxx
+
 Topology: ICE/STUN
+
 STUN Server: stun.l.google.com:19302
+
 Transport: UDP
+
 SRTP: No
+
 
