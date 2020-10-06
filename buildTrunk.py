@@ -4,6 +4,8 @@ from botocore.config import Config
 from datetime import datetime
 import uuid
 import ipaddress
+import secrets
+import string
 
 regionChosen = ''   # Add region if desired
 vpcChosen = ''      # Add VPC if desired
@@ -17,6 +19,11 @@ def json_serial(obj):
         serial = obj.isoformat()
         return serial
     raise TypeError("Type not serializable")
+
+def get_secure_random_string(length):
+    secure_str = ''.join((secrets.choice(string.ascii_letters) for i in range(length)))
+    return secure_str
+
 
 if not regionChosen:
     print('1. us-east-1')
@@ -139,7 +146,9 @@ response = client.create_voice_connector(
 
 voiceConnectorId = response['VoiceConnector']['VoiceConnectorId']
 outboundHostName = response['VoiceConnector']['OutboundHostName']
+password = get_secure_random_string(8)
 
+print('Password: ' + password)
 print('VoiceConnectorID: ' + voiceConnectorId)
 print('OutboundHostName: ' + outboundHostName)
 now = datetime.now()
@@ -175,6 +184,10 @@ response = client.create_stack(
         {
             'ParameterKey': 'PhoneNumber',
             'ParameterValue': phoneNumberToOrder
+        },
+        {
+            'ParameterKey': 'Password',
+            'ParameterValue': password
         },
         {
             'ParameterKey': 'VoiceConnectorHostName',

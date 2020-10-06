@@ -31,6 +31,9 @@ Parameters:
   PhoneNumber:
     Type: String
 
+  Password:
+    Type: String
+
   VoiceConnectorHostName:
     Type: String    
 
@@ -188,7 +191,7 @@ Resources:
           [${PhoneNumber}]
           type=auth
           auth_type=userpass
-          password=17sch23pah
+          password=${Password}
           username=${PhoneNumber}
 
           [${PhoneNumber}]
