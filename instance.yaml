@@ -1,0 +1,268 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: Create an AWS EC2 instance with an Asterisk Server
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Select VPC
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: Select subnet
+
+  HomeIP:
+    Type: String
+    Description: Home Router IP
+    MinLength: 9
+    MaxLength: 18
+    Default: "0.0.0.0/0"
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be a valid IP CIDR range of the form x.x.x.x/x
+
+  LatestAmazonLinux2AmiId:
+    Type : 'AWS::SSM::Parameter::Value<String>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+  KeyPair:
+    Type : 'AWS::EC2::KeyPair::KeyName'
+
+  PhoneNumber:
+    Type: String
+
+  VoiceConnectorHostName:
+    Type: String    
+
+Resources:
+  IPAddress:
+    Type: AWS::EC2::EIP
+
+  IPAssoc:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt IPAddress.AllocationId
+      NetworkInterfaceId: !Ref AsteriskInterface
+
+  AsteriskInterface:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref SubnetId
+      Description: Main Asterisk Interface
+      GroupSet: 
+      - !Ref SGWeb
+
+  SGWeb:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VoiceConnector SecurityGroup
+      SecurityGroupIngress:
+      - IpProtocol: udp
+        FromPort: '5060'
+        ToPort: '5060'
+        CidrIp: "3.80.16.0/24"
+      - IpProtocol: udp
+        FromPort: '10000'
+        ToPort: '65000'
+        CidrIp: "3.80.16.0/24"
+      - IpProtocol: udp
+        FromPort: '5060'
+        ToPort: '5060'
+        CidrIp: "99.77.253.0/24"
+      - IpProtocol: udp
+        FromPort: '10000'
+        ToPort: '65000'
+        CidrIp: "99.77.253.0/24"
+      - IpProtocol: udp
+        FromPort: '19302'
+        ToPort: '19302'
+        CidrIp: "209.85.146.127/32"
+      - IpProtocol: udp
+        FromPort: '5060'
+        ToPort: '5060'
+        CidrIp: !Ref 'HomeIP'
+      - IpProtocol: udp
+        FromPort: '5060'
+        ToPort: '5060'
+        CidrIp: !Ref 'HomeIP'      
+      - IpProtocol: udp
+        FromPort: '10000'
+        ToPort: '65000'
+        CidrIp: !Ref 'HomeIP'
+      - IpProtocol: tcp
+        FromPort: '22'
+        ToPort: '22'
+        CidrIp: !Ref 'HomeIP'            
+      VpcId: !Ref VpcId
+
+  AsteriskServer:
+    Type: AWS::EC2::Instance
+    DependsOn: IPAssoc
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT30M
+    Properties:
+      ImageId: !Ref LatestAmazonLinux2AmiId
+      InstanceInitiatedShutdownBehavior: stop
+      InstanceType: t2.micro
+      KeyName: !Ref KeyPair
+      Monitoring: 'true'
+      NetworkInterfaces:
+      - NetworkInterfaceId: !Ref AsteriskInterface
+        DeviceIndex: 0
+      Tenancy: default
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          HOMEDIR=/home/ec2-user
+          yum update -y
+          yum install net-tools -y
+          yum install wget -y
+          yum -y install make gcc gcc-c++ make subversion libxml2-devel ncurses-devel openssl-devel vim-enhanced man glibc-devel autoconf libnewt kernel-devel kernel-headers linux-headers openssl-devel zlib-devel libsrtp libsrtp-devel uuid libuuid-devel mariadb-server jansson-devel libsqlite3x libsqlite3x-devel epel-release.noarch bash-completion bash-completion-extras unixODBC unixODBC-devel libtool-ltdl libtool-ltdl-devel mysql-connector-odbc mlocate libiodbc sqlite sqlite-devel sql-devel.i686 sqlite-doc.noarch sqlite-tcl.x86_64 patch libedit-devel
+          cd /tmp
+          wget https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-16-current.tar.gz
+          tar xvzf asterisk-16-current.tar.gz 
+          cd asterisk-16*/
+          ./configure --libdir=/usr/lib64 --with-jansson-bundled
+          make -j$(nproc) menuselect.makeopts
+          menuselect/menuselect \
+                  --disable BUILD_NATIVE \
+                  --disable chan_sip \
+                  --disable chan_skinny \
+                  --enable cdr_csv \
+                  --enable res_snmp \
+                  --enable res_http_websocket \
+                  menuselect.makeopts \
+          make -j$(nproc)
+          make -j$(nproc) install
+          make -j$(nproc) basic-pbx
+          touch /etc/redhat-release
+          make -j$(nproc) config
+          ldconfig
+          rm /etc/redhat-release
+          # mkdir /etc/asterisk
+          # IP=$( curl http://169.254.169.254/latest/meta-data/public-ipv4 )
+          IP=${IPAddress}
+          LocalIP=$(hostname -I)
+
+          echo "[udp]
+          type=transport
+          protocol=udp
+          bind=$LocalIP
+          external_media_address=$IP
+          external_signaling_address=$IP
+          allow_reload=yes
+
+          [VoiceConnector]
+          type=endpoint
+          context=from-voiceConnector
+          transport=udp
+          disallow=all
+          allow=ulaw
+          aors=VoiceConnector
+          direct_media=no
+          ice_support=yes
+          force_rport=yes
+
+          [VoiceConnector]
+          type=identify
+          endpoint=VoiceConnector
+          match=${VoiceConnectorHostName}
+
+          [VoiceConnector]
+          type=aor
+          contact=sip:${VoiceConnectorHostName}
+
+          [${PhoneNumber}]
+          type=endpoint
+          context=from-phone
+          disallow=all
+          allow=ulaw
+          transport=udp
+          auth=${PhoneNumber}
+          aors=${PhoneNumber}
+          send_pai=yes
+          direct_media=no
+          rewrite_contact=yes
+
+          [${PhoneNumber}]
+          type=auth
+          auth_type=userpass
+          password=17sch23pah
+          username=${PhoneNumber}
+
+          [${PhoneNumber}]
+          type=aor
+          max_contacts=5" > /etc/asterisk/pjsip.conf
+
+          echo "; extensions.conf - the Asterisk dial plan
+          ;
+          [general]
+          static=yes
+          writeprotect=no
+          clearglobalvars=no
+
+          [catch-all]
+          exten => _[+0-9].,1,Answer()
+          exten => _[+0-9].,n,Wait(1)
+          exten => _[+0-9].,n,Playback(hello-world)
+          exten => _[+0-9].,n,Wait(1)
+          exten => _[+0-9].,n,echo()
+          exten => _[+0-9].,n,Wait(1)
+          exten => _[+0-9].,n,Hangup()
+
+          [from-phone]
+          include => outbound_phone
+
+          [outbound_phone]
+          exten => _+X.,1,NoOP(Outbound Normal)
+          same => n,Dial(PJSIP/\${!EXTEN}@VoiceConnector,20)
+          same => n,Congestion
+
+          [from-voiceConnector]
+          include => phones
+          include => catch-all
+
+          [phones]
+          include => stdexten
+          exten => ${PhoneNumber},1,Dial(PJSIP/${PhoneNumber})" > /etc/asterisk/extensions.conf
+          
+          echo "[general]
+          stunaddr=stun.l.google.com:19302" > /etc/asterisk/rtp.conf
+
+          echo "[general]
+          stunaddr=stun.l.google.com:19302" > /etc/asterisk/res_stun_monitor.conf 
+
+          echo "load = res_stun_monitor.so " >> /etc/asterisk/modules.conf
+
+          echo "[options]
+          runuser = asterisk
+          rungroup = asterisk" > /etc/asterisk/asterisk.conf
+
+          echo "[general]
+          [logfiles]
+          console = verbose,notice,warning,error
+          messages = notice,warning,error" > /etc/asterisk/logger.conf
+
+          groupadd asterisk
+          useradd -r -d /var/lib/asterisk -g asterisk asterisk
+          usermod -aG audio,dialout asterisk
+          chown -R asterisk.asterisk /etc/asterisk
+          chown -R asterisk.asterisk /var/{lib,log,spool}/asterisk
+
+          systemctl start asterisk
+
+          /opt/aws/bin/cfn-signal \
+            -e $? \
+            --stack ${AWS::StackName} \
+            --resource AsteriskServer \
+            --region ${AWS::Region}    
+
+Outputs:
+  AsteriskServer:
+    Description: AsteriskServer Instance Id
+    Value: !Ref AsteriskServer
+
+  AsteriskServerIP:
+    Description: AsteriskServer IP Address
+    Value: !Ref 'IPAddress'
