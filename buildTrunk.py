@@ -3,12 +3,13 @@ import json
 from botocore.config import Config
 from datetime import datetime
 import uuid
+import ipaddress
 
 regionChosen = ''   # Add region if desired
 vpcChosen = ''      # Add VPC if desired
 subnetChosen = ''   # Add subnet if desired
 keypairChosen = ''  # Add keypair if desired
-homeIPChosen = ''
+homeIPChosen = ''   # Add home network if desired as xxx.xxx.xxx.xxx/xx
 
 def json_serial(obj):
     """JSON serializer for objects not serializable by default json code"""
@@ -87,6 +88,19 @@ if not keypairChosen:
 
     keypairSelection = int(input('Select KeyPair: '))
     keypairChosen = keypairIDs[keypairSelection]
+
+if not homeIPChosen:
+    while True:
+        try:
+            homeIPSelection = str(input('Enter public IPv4 Address of home network: '))
+            if ipaddress.ip_address(homeIPSelection):
+                homeIPChosen = homeIPSelection+'/32'
+                break
+            else:
+                print("Please ensure IPv4 address is valid in format xxx.xxx.xxx.xxx")
+        except ValueError:
+            print("Provide an integer value...")
+            continue
 
 print ('Region: ' + regionChosen)
 print ('VPC: ' + vpcChosen)
