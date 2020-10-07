@@ -108,7 +108,7 @@ Resources:
     Properties:
       ImageId: !Ref LatestAmazonLinux2AmiId
       InstanceInitiatedShutdownBehavior: stop
-      InstanceType: t2.micro
+      InstanceType: t2.xlarge
       KeyName: !Ref KeyPair
       Monitoring: 'true'
       NetworkInterfaces:
